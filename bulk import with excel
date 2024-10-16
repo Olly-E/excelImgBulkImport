@@ -1,0 +1,282 @@
+// 'use client';
+
+// import React, { useState, ChangeEvent } from 'react';
+// import * as XLSX from 'xlsx';
+// import JSZip from 'jszip';
+// import axios from 'axios';
+// import ImportItemsModal from '@/components/templates/Items/components/modals/ImportItems';
+// import { useComponentVisible } from '@/hooks/useComponentVisible';
+
+// const ImgBB_API_KEY = '7d7cb142dc0ffcaf89de112e6b0c49f1'; // Replace with your ImgBB API Key
+
+// interface DataRow {
+//   Image: string;
+//   Name: string;
+//   ' Category*': string;
+//   SKU: string;
+//   'Opening stock*': string;
+//   'Low Stock*': string;
+//   'Cost Price*': string;
+//   'Selling Price*': string;
+//   'Wholesale Price': string;
+//   originalIndex: number;
+// }
+
+// const App: React.FC = () => {
+//   const [data, setData] = useState<DataRow[]>([]);
+//   const [uploading, setUploading] = useState<boolean>(false);
+//   const [imageUploadLogs, setImageUploadLogs] = useState<string[]>([]);
+
+//   const { ref, dropDownButtonRef, isComponentVisible, setIsComponentVisible } =
+//     useComponentVisible();
+
+//   // Allowed image file extensions
+//   const allowedImageExtensions = ['png', 'jpg', 'jpeg', 'gif'];
+
+//   // Function to handle file input and extract images
+//   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+//     const file = e.target.files?.[0];
+//     if (!file) return;
+
+//     const reader = new FileReader();
+//     reader.onload = async event => {
+//       const binaryStr = event.target?.result;
+//       if (typeof binaryStr !== 'string') return;
+
+//       // Parse the Excel file using XLSX
+//       const workbook = XLSX.read(binaryStr, { type: 'binary' });
+//       const sheetName = workbook.SheetNames[0];
+//       const worksheet = workbook.Sheets[sheetName];
+//       const jsonData = XLSX.utils.sheet_to_json<DataRow>(worksheet);
+
+//       // Filter out rows without a name
+//       const filteredData = jsonData.filter(row => row.Name?.trim());
+
+//       // Extract images using JSZip
+//       const zip = new JSZip();
+//       const zipData = await zip.loadAsync(file); // Load the entire Excel file as a ZIP
+//       const mediaFolder = zipData.folder('xl/media/'); // This is where images are stored in Excel
+
+//       console.log(mediaFolder);
+
+//       if (!mediaFolder) {
+//         console.error('No images found in the Excel file.');
+//         return;
+//       }
+
+//       console.log(filteredData);
+//       // Initialize data with the filtered JSON and without image URLs yet
+//       const initialData = filteredData.map((row, index) => ({
+//         Image: '', // Placeholder for the image URL
+//         Name: row.Name,
+//         'Category*': row[' Category*'],
+//         SKU: row.SKU,
+//         'Opening stock*': row['Opening stock*'],
+//         'Low Stock*': row['Low Stock*'],
+//         'Cost Price*': row['Cost Price*'],
+//         'Selling Price*': row['Selling Price*'],
+//         'Wholesale Price': row['Wholesale Price'],
+//         originalIndex: index, // Save original index
+//       }));
+//       setData(initialData);
+
+//       // Function to upload image to ImgBB and return the URL
+//       const uploadImage = async (imageFile: { path: string; data: Blob }): Promise<string> => {
+//         setUploading(true);
+//         const formData = new FormData();
+
+//         formData.append('image', imageFile.data); // Use Blob data for upload
+
+//         try {
+//           const response = await axios.post(
+//             `https://api.imgbb.com/1/upload?key=${ImgBB_API_KEY}`,
+//             formData,
+//             {
+//               headers: {
+//                 'Content-Type': 'multipart/form-data', // Ensure the right content type is set
+//               },
+//             },
+//           );
+
+//           setImageUploadLogs(logs => [
+//             ...logs,
+//             `Uploaded ${imageFile.path}: ${response.data.data.url}`,
+//           ]);
+
+//           return response.data.data.url; // Return the ImgBB URL
+//         } catch (error) {
+//           console.error('Error uploading image:', error);
+//           setImageUploadLogs(logs => [...logs, `Failed to upload ${imageFile.path}`]);
+
+//           return ''; // Fallback in case of error
+//         } finally {
+//           setUploading(false);
+//         }
+//       };
+
+//       // Process only image files by filtering based on file extension
+//       const imageFilePromises = Object.keys(mediaFolder.files).map(async relativePath => {
+//         const fileExtension = relativePath.split('.').pop()?.toLowerCase();
+//         if (fileExtension && allowedImageExtensions.includes(fileExtension)) {
+//           const mediaFile = mediaFolder.files[relativePath];
+//           const imageData = await mediaFile.async('blob'); // Convert image to Blob format
+//           return { path: relativePath, data: imageData };
+//         }
+//         console.log(`Skipping non-image file: ${relativePath}`);
+//         return null;
+//       });
+
+//       const imageFiles = (await Promise.all(imageFilePromises)).filter(Boolean) as {
+//         path: string;
+//         data: Blob;
+//       }[];
+
+//       // Upload images and update the corresponding rows
+//       imageFiles.forEach(async (imageFile, i) => {
+//         try {
+//           const imageUrl = await uploadImage(imageFile); // Upload image and get URL
+
+//           // Match the uploaded image back to its original index
+//           setData(prevData =>
+//             prevData.map(row => {
+//               if (row.originalIndex === i) {
+//                 return { ...row, Image: imageUrl }; // Update row's image field with the ImgBB URL
+//               }
+//               return row;
+//             }),
+//           );
+//         } catch (error) {
+//           console.error('Error during upload:', error); // Log the error during upload
+//         }
+//       });
+//     };
+
+//     reader.readAsBinaryString(file); // Read the file as a binary string
+//   };
+
+//   // Function to handle changes to the table input
+//   const handleInputChange = (index: number, field: keyof DataRow, value: string) => {
+//     const updatedData = [...data];
+//     updatedData[index][field] = value;
+//     setData(updatedData);
+//   };
+
+//   // Function to handle the submit button
+//   const handleSubmit = () => {
+//     console.log('Final Data:', data);
+//   };
+
+//   return (
+//     <div className="container">
+//       <h1>Import Spreadsheet</h1>
+//       <input type="file" accept=".xlsx, .xls" onChange={handleFileUpload} />
+
+//       {uploading && <p>Uploading images...</p>}
+
+//       {imageUploadLogs.length > 0 && (
+//         <div>
+//           <h2>Image Upload Logs</h2>
+//           <ul>
+//             {imageUploadLogs.map((log, index) => (
+//               <li key={index}>{log}</li>
+//             ))}
+//           </ul>
+//         </div>
+//       )}
+
+//       {data.length > 0 && (
+//         <table border="1">
+//           <thead>
+//             <tr>
+//               <th>Image</th>
+//               <th>Name</th>
+//               <th>Category</th>
+//               <th>SKU</th>
+//               <th>Opening Stock</th>
+//               <th>Low Stock</th>
+//               <th>Cost Price</th>
+//               <th>Selling Price</th>
+//               <th>Wholesale Price</th>
+//             </tr>
+//           </thead>
+//           <tbody>
+//             {data.map((item, index) => (
+//               <tr key={index}>
+//                 <td>
+//                   {item.Image ? <img src={item.Image} alt="Uploaded" width="50" /> : 'No Image'}
+//                 </td>
+//                 <td>
+//                   <input
+//                     id={`name-${index}`}
+//                     type="text"
+//                     value={item.Name}
+//                     onChange={e => handleInputChange(index, 'Name', e.target.value)}
+//                   />
+//                 </td>
+//                 <td>
+//                   <input
+//                     id={`category-${index}`}
+//                     type="text"
+//                     value={item['Category*']}
+//                     onChange={e => handleInputChange(index, 'Category*', e.target.value)}
+//                   />
+//                 </td>
+//                 <td>
+//                   <input
+//                     id={`sku-${index}`}
+//                     type="text"
+//                     value={item.SKU}
+//                     onChange={e => handleInputChange(index, 'SKU', e.target.value)}
+//                   />
+//                 </td>
+//                 <td>
+//                   <input
+//                     id={`opening-stock-${index}`}
+//                     type="text"
+//                     value={item['Opening stock*']}
+//                     onChange={e => handleInputChange(index, 'Opening stock*', e.target.value)}
+//                   />
+//                 </td>
+//                 <td>
+//                   <input
+//                     id={`low-stock-${index}`}
+//                     type="text"
+//                     value={item['Low Stock*']}
+//                     onChange={e => handleInputChange(index, 'Low Stock*', e.target.value)}
+//                   />
+//                 </td>
+//                 <td>
+//                   <input
+//                     id={`cost-price-${index}`}
+//                     type="text"
+//                     value={item['Cost Price*']}
+//                     onChange={e => handleInputChange(index, 'Cost Price*', e.target.value)}
+//                   />
+//                 </td>
+//                 <td>
+//                   <input
+//                     id={`selling-price-${index}`}
+//                     type="text"
+//                     value={item['Selling Price*']}
+//                     onChange={e => handleInputChange(index, 'Selling Price*', e.target.value)}
+//                   />
+//                 </td>
+//                 <td>
+//                   <input
+//                     id={`wholesale-price-${index}`}
+//                     type="text"
+//                     value={item['Wholesale Price']}
+//                     onChange={e => handleInputChange(index, 'Wholesale Price', e.target.value)}
+//                   />
+//                 </td>
+//               </tr>
+//             ))}
+//           </tbody>
+//         </table>
+//       )}
+//     </div>
+//   );
+// };
+// export default App;
+
+// THE ABOVE IS A WORKING PROGRESS TO BE COMPLETED LATER IT CONTAINS CODE FOR IMPORTING IMAGES ALONGSIDE SPREADSHEET DATA DO NOT DELETE!!!
